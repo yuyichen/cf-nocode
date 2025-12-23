@@ -1,0 +1,46 @@
+{
+  "name": "cf-nocode",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:auth\" \"cd client/main-shell && npm run dev\" \"cd client/admin-builder && npm run dev\" \"cd client/client-runtime && npm run dev\"",
+    "dev:api": "wrangler dev",
+    "dev:auth": "wrangler dev --port 8788 --config server/auth-worker/wrangler.toml",
+    "deploy:api": "wrangler deploy",
+    "deploy:auth": "cd server/auth-worker && wrangler deploy",
+    "db:init": "wrangler d1 execute cf-nocode-db --local --file=./server/api-worker/schema.sql",
+    "db:init:remote": "wrangler d1 execute cf-nocode-db --remote --file=./server/api-worker/schema.sql",
+    "auth:init-schema": "cd server/auth-worker && wrangler d1 execute cf-nocode-db --local --file=./server/auth-worker/schema.sql",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@apollo/server": "^4.12.2",
+    "@as-integrations/cloudflare-workers": "^1.1.1",
+    "@formily/core": "^2.3.7",
+    "@formily/element-plus": "^1.1.0",
+    "@formily/vue": "^2.3.7",
+    "concurrently": "^9.2.1",
+    "element-plus": "^2.13.0",
+    "graphql": "^16.12.0",
+    "graphql-tag": "^2.12.6",
+    "hono": "^4.11.1",
+    "pinia": "^3.0.4",
+    "qiankun": "^2.10.16",
+    "vite-plugin-qiankun": "^1.0.15",
+    "vue": "^3.5.26",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251221.0",
+    "@types/node": "^25.0.3",
+    "@vitejs/plugin-vue": "^6.0.3",
+    "typescript": "^5.9.3",
+    "unocss": "^66.5.10",
+    "vite": "^7.3.0",
+    "vue-tsc": "^3.2.0"
+  }
+}

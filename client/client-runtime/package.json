@@ -1,0 +1,8 @@
+{
+  "name": "client-runtime",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite --port 3002",
+    "build": "vite build"
+  }
+}

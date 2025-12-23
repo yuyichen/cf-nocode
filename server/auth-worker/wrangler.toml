@@ -1,0 +1,15 @@
+name = "cf-auth"
+main = "index.ts"
+compatibility_date = "2023-12-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-nocode-db"
+database_id = "3bf43ef3-714b-4533-b788-72910d944e49" # Same as main API
+preview_database_id = "3bf43ef3-714b-4533-b788-72910d944e49"
+
+[vars]
+JWT_SECRET = "your-secret-key-change-in-production"
+
+[observability]
+enabled = true

@@ -1,0 +1,567 @@
+import { Hono } from 'hono';
+import { jwt, sign } from 'hono/jwt';
+import { ModelService, type Model, type ModelField } from './model-service';
+import { CrudService } from './crud-service';
+
+type Bindings = {
+  DB: D1Database;
+  JWT_SECRET: string;
+};
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+// CORS中间件
+app.use('/*', async (c, next) => {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+  await next();
+  Object.entries(corsHeaders).forEach(([k, v]) => c.header(k, v));
+});
+
+// 健康检查
+app.get('/', (c) => c.text('Cloudflare No-Code API Engine Ready'));
+
+// 模型管理服务实例
+const getModelService = (c: any) => new ModelService(c.env.DB);
+const getCrudService = (c: any) => new CrudService(c.env.DB);
+
+// ========== 模型管理API ==========
+
+// 获取所有模型
+app.get('/api/models', async (c) => {
+  try {
+    const service = getModelService(c);
+    const models = await service.getAllModels();
+    return c.json(models);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取单个模型
+app.get('/api/models/:id', async (c) => {
+  try {
+    const service = getModelService(c);
+    const model = await service.getModelById(c.req.param('id'));
+    if (!model) {
+      return c.json({ error: 'Model not found' }, 404);
+    }
+    return c.json(model);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 创建模型
+app.post('/api/models', async (c) => {
+  try {
+    const service = getModelService(c);
+    const data = await c.req.json();
+    
+    // 验证必要字段
+    if (!data.name || !data.label) {
+      return c.json({ error: 'Name and label are required' }, 400);
+    }
+
+    const model = await service.createModel(data);
+    return c.json(model, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 更新模型
+app.put('/api/models/:id', async (c) => {
+  try {
+    const service = getModelService(c);
+    const data = await c.req.json();
+    const success = await service.updateModel(c.req.param('id'), data);
+    
+    if (!success) {
+      return c.json({ error: 'Update failed' }, 400);
+    }
+    
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 删除模型
+app.delete('/api/models/:id', async (c) => {
+  try {
+    const service = getModelService(c);
+    const success = await service.deleteModel(c.req.param('id'));
+    
+    if (!success) {
+      return c.json({ error: 'Delete failed' }, 400);
+    }
+    
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== 字段管理API ==========
+
+// 添加字段到模型
+app.post('/api/models/:modelId/fields', async (c) => {
+  try {
+    const service = getModelService(c);
+    const data = await c.req.json();
+    
+    // 验证必要字段
+    if (!data.name || !data.label || !data.type) {
+      return c.json({ error: 'Name, label and type are required' }, 400);
+    }
+
+    const field = await service.addField(c.req.param('modelId'), data);
+    return c.json(field, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 更新字段
+app.put('/api/fields/:id', async (c) => {
+  try {
+    const service = getModelService(c);
+    const data = await c.req.json();
+    const success = await service.updateField(c.req.param('id'), data);
+    
+    if (!success) {
+      return c.json({ error: 'Update failed' }, 400);
+    }
+    
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 删除字段
+app.delete('/api/fields/:id', async (c) => {
+  try {
+    const service = getModelService(c);
+    const success = await service.deleteField(c.req.param('id'));
+    
+    if (!success) {
+      return c.json({ error: 'Delete failed' }, 400);
+    }
+    
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== 动态表创建API ==========
+
+// 创建动态表
+app.post('/api/tables/:modelId/create', async (c) => {
+  try {
+    const service = getModelService(c);
+    const modelId = c.req.param('modelId');
+    
+    // 获取模型及其字段
+    const model = await service.getModelById(modelId);
+    if (!model) {
+      return c.json({ error: 'Model not found' }, 404);
+    }
+    
+    if (!model.fields || model.fields.length === 0) {
+      return c.json({ error: 'Model has no fields' }, 400);
+    }
+    
+    // 创建动态表
+    const success = await service.createDynamicTable(model.name, model.fields);
+    
+    if (!success) {
+      return c.json({ error: 'Failed to create table' }, 500);
+    }
+    
+    return c.json({ 
+      success: true, 
+      message: `Table '${model.name}' created successfully`,
+      sql: service.generateCreateTableSQL(model.name, model.fields)
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== 动态CRUD API ==========
+
+// 获取数据列表（支持分页、过滤、排序）
+app.get('/api/data/:tableName', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    
+    // 解析查询参数
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = parseInt(c.req.query('pageSize') || '20');
+    const sortBy = c.req.query('sortBy') || 'created_at';
+    const sortOrder = (c.req.query('sortOrder') || 'desc') as 'asc' | 'desc';
+    
+    // 构建过滤条件
+    const filters: Record<string, any> = {};
+    const queryParams = c.req.query();
+    Object.keys(queryParams).forEach(key => {
+      if (!['page', 'pageSize', 'sortBy', 'sortOrder'].includes(key)) {
+        filters[key] = queryParams[key];
+      }
+    });
+    
+    const result = await service.getList(tableName, {
+      page,
+      pageSize,
+      filters,
+      sortBy,
+      sortOrder
+    });
+    
+    return c.json(result);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取单条数据
+app.get('/api/data/:tableName/:id', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const id = c.req.param('id');
+    
+    const data = await service.getById(tableName, id);
+    if (!data) {
+      return c.json({ error: 'Data not found' }, 404);
+    }
+    
+    return c.json(data);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 创建数据
+app.post('/api/data/:tableName', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const data = await c.req.json();
+    
+    const result = await service.create(tableName, data);
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json({ 
+      success: true, 
+      id: result.id,
+      message: 'Data created successfully'
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 更新数据
+app.put('/api/data/:tableName/:id', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const id = c.req.param('id');
+    const data = await c.req.json();
+    
+    const result = await service.update(tableName, id, data);
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json({ success: true, message: 'Data updated successfully' });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 删除数据
+app.delete('/api/data/:tableName/:id', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const id = c.req.param('id');
+    
+    const result = await service.delete(tableName, id);
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json({ success: true, message: 'Data deleted successfully' });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 批量删除数据
+app.post('/api/data/:tableName/batch-delete', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const { ids } = await c.req.json();
+    
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return c.json({ error: 'IDs array is required' }, 400);
+    }
+    
+    const result = await service.batchDelete(tableName, ids);
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json({ success: true, message: 'Batch delete completed' });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== 认证API ==========
+
+// JWT中间件
+const jwtMiddleware = jwt({
+  secret: (c: any) => c.env.JWT_SECRET,
+});
+
+// 密码哈希辅助函数
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const newHash = await hashPassword(password);
+  return newHash === hash;
+}
+
+// 用户注册
+app.post('/api/auth/register', async (c) => {
+  try {
+    const { email, password, name } = await c.req.json();
+
+    // 验证输入
+    if (!email || !password) {
+      return c.json({ error: 'Email and password are required' }, 400);
+    }
+
+    // 检查用户是否已存在
+    const existingUser = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE email = ?'
+    ).bind(email).first();
+
+    if (existingUser) {
+      return c.json({ error: 'User already exists' }, 409);
+    }
+
+    // 哈希密码
+    const passwordHash = await hashPassword(password);
+
+    // 创建用户
+    const userId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await c.env.DB.prepare(
+      'INSERT INTO users (id, email, password_hash, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(userId, email, passwordHash, name || null, now, now).run();
+
+    // 生成JWT令牌
+    const token = await sign(
+      { userId, email, name: name || '' },
+      c.env.JWT_SECRET,
+      'HS256'
+    );
+
+    return c.json({
+      success: true,
+      token,
+      user: {
+        id: userId,
+        email,
+        name: name || '',
+        created_at: now
+      }
+    }, 201);
+  } catch (error: any) {
+    console.error('Registration error:', error);
+    return c.json({ error: 'Registration failed' }, 500);
+  }
+});
+
+// 用户登录
+app.post('/api/auth/login', async (c) => {
+  try {
+    const { email, password } = await c.req.json();
+
+    if (!email || !password) {
+      return c.json({ error: 'Email and password are required' }, 400);
+    }
+
+    // 查找用户
+    const user = await c.env.DB.prepare(
+      'SELECT * FROM users WHERE email = ?'
+    ).bind(email).first() as any;
+
+    if (!user) {
+      return c.json({ error: 'Invalid credentials' }, 401);
+    }
+
+    // 验证密码
+    const isValid = await verifyPassword(password, user.password_hash);
+    if (!isValid) {
+      return c.json({ error: 'Invalid credentials' }, 401);
+    }
+
+    // 生成JWT令牌
+    const token = await sign(
+      { userId: user.id, email: user.email, name: user.name || '' },
+      c.env.JWT_SECRET,
+      'HS256'
+    );
+
+    return c.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name || '',
+        created_at: user.created_at
+      }
+    });
+  } catch (error: any) {
+    console.error('Login error:', error);
+    return c.json({ error: 'Login failed' }, 500);
+  }
+});
+
+// 获取当前用户信息
+app.get('/api/auth/me', jwtMiddleware, async (c) => {
+  try {
+    const payload = c.get('jwtPayload');
+    
+    const user = await c.env.DB.prepare(
+      'SELECT id, email, name, created_at, updated_at FROM users WHERE id = ?'
+    ).bind(payload.userId).first();
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    return c.json({ success: true, user });
+  } catch (error: any) {
+    console.error('Get profile error:', error);
+    return c.json({ error: 'Failed to get profile' }, 500);
+  }
+});
+
+// 刷新令牌
+app.post('/api/auth/refresh', jwtMiddleware, async (c) => {
+  try {
+    const payload = c.get('jwtPayload');
+    
+    // 生成新令牌
+    const token = await sign(
+      { userId: payload.userId, email: payload.email, name: payload.name || '' },
+      c.env.JWT_SECRET,
+      'HS256'
+    );
+
+    return c.json({
+      success: true,
+      token
+    });
+  } catch (error: any) {
+    console.error('Refresh token error:', error);
+    return c.json({ error: 'Failed to refresh token' }, 500);
+  }
+});
+
+// 数据库测试端点
+app.get('/api/auth/test-db', async (c) => {
+  try {
+    // 尝试简单的SQLite系统查询
+    const tablesResult = await c.env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).all() as any;
+    
+    const tableNames = tablesResult?.results?.map((t: any) => t.name) || [];
+    
+    return c.json({
+      success: true,
+      message: 'Database connection successful',
+      tables: tableNames,
+      tableCount: tableNames.length
+    });
+  } catch (error: any) {
+    return c.json({
+      success: false,
+      message: 'Database connection failed',
+      error: error.message,
+      simpleError: String(error)
+    }, 500);
+  }
+});
+
+// ========== GraphQL API ==========
+
+// 导入GraphQL处理器
+import { createGraphQLServer } from './graphql';
+
+// 创建GraphQL处理器
+const graphqlHandler = createGraphQLServer((c: any) => c.env.DB);
+
+// GraphQL端点
+app.all('/graphql', async (c) => {
+  return graphqlHandler(c.req.raw, c.env, c.executionCtx);
+});
+
+// GraphQL Playground
+app.get('/graphql-playground', (c) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>GraphQL Playground</title>
+        <link rel="stylesheet" href="https://unpkg.com/graphql-playground-react/build/static/css/index.css" />
+        <link rel="shortcut icon" href="https://unpkg.com/graphql-playground-react/build/favicon.png" />
+        <script src="https://unpkg.com/graphql-playground-react/build/static/js/middleware.js"></script>
+      </head>
+      <body>
+        <div id="root"></div>
+        <script>
+          window.addEventListener('load', function(event) {
+            GraphQLPlayground.init(document.getElementById('root'), {
+              endpoint: '/graphql',
+              settings: {
+                'request.credentials': 'same-origin'
+              }
+            })
+          })
+        </script>
+      </body>
+    </html>
+  `;
+  return c.html(html);
+});
+
+export default app;
