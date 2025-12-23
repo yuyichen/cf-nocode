@@ -338,7 +338,7 @@ app.post('/api/data/:tableName/batch-delete', async (c) => {
 // JWT中间件
 const jwtMiddleware = jwt({
   secret: (c: any) => c.env.JWT_SECRET,
-});
+} as any);
 
 // 密码哈希辅助函数
 async function hashPassword(password: string): Promise<string> {
@@ -528,7 +528,7 @@ app.get('/api/auth/test-db', async (c) => {
 import { createGraphQLServer } from './graphql';
 
 // 创建GraphQL处理器
-const graphqlHandler = createGraphQLServer((c: any) => c.env.DB);
+const graphqlHandler = createGraphQLServer();
 
 // GraphQL端点
 app.all('/graphql', async (c) => {

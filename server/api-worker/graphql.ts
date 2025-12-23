@@ -126,7 +126,7 @@ const resolvers = {
 };
 
 // 创建Apollo Server实例
-export function createGraphQLServer(db: any) {
+export function createGraphQLServer() {
   const server = new ApolloServer({
     typeDefs,
     resolvers,
@@ -134,10 +134,10 @@ export function createGraphQLServer(db: any) {
   });
 
   return startServerAndCreateCloudflareWorkersHandler(server, {
-    context: async () => ({
+    context: async (integrationContext: any) => ({
       services: {
-        modelService: new (require('./model-service').ModelService)(db),
-        crudService: new (require('./crud-service').CrudService)(db)
+        modelService: new (require('./model-service').ModelService)(integrationContext.env.DB),
+        crudService: new (require('./crud-service').CrudService)(integrationContext.env.DB)
       }
     })
   });
