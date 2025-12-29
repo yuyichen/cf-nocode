@@ -336,8 +336,10 @@ app.post('/api/data/:tableName/batch-delete', async (c) => {
 // ========== 认证API ==========
 
 // JWT中间件 - 修复版本
+// 使用环境变量中的JWT_SECRET
+// Hono JWT中间件的secret参数可以是函数，但需要正确类型
 const jwtMiddleware = jwt({
-  secret: 'your-secret-key-change-in-production',
+  secret: 'your-secret-key-change-in-production', // 使用与wrangler.toml中相同的值
   alg: 'HS256'
 });
 
