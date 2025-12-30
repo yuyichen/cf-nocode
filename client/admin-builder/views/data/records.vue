@@ -93,17 +93,17 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../../store'
+
+const authStore = useAuthStore()
+
+// API基础URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787'
 
 const selectedTable = ref('')
-const tables = ref([
-  { name: 'users', label: '用户表' },
-  { name: 'products', label: '产品表' },
-  { name: 'orders', label: '订单表' },
-  { name: 'categories', label: '分类表' }
-])
-
+const tables = ref([])
 const tableData = ref([])
 const columns = ref([])
 const loading = ref(false)
@@ -111,58 +111,85 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
-// 模拟数据
-const mockData = {
-  users: {
-    columns: [
-      { prop: 'id', label: 'ID', width: 80 },
-      { prop: 'username', label: '用户名', width: 120 },
-      { prop: 'email', label: '邮箱', width: 180 },
-      { prop: 'role', label: '角色', width: 100 },
-      { prop: 'created_at', label: '创建时间', width: 160 }
-    ],
-    data: Array.from({ length: 45 }, (_, i) => ({
-      id: i + 1,
-      username: `user${i + 1}`,
-      email: `user${i + 1}@example.com`,
-      role: i % 3 === 0 ? 'admin' : i % 3 === 1 ? 'editor' : 'viewer',
-      created_at: new Date(Date.now() - i * 86400000).toLocaleString()
-    }))
-  },
-  products: {
-    columns: [
-      { prop: 'id', label: 'ID', width: 80 },
-      { prop: 'name', label: '产品名称', width: 150 },
-      { prop: 'price', label: '价格', width: 100 },
-      { prop: 'stock', label: '库存', width: 100 },
-      { prop: 'category', label: '分类', width: 120 }
-    ],
-    data: Array.from({ length: 32 }, (_, i) => ({
-      id: i + 1,
-      name: `产品 ${i + 1}`,
-      price: (Math.random() * 1000).toFixed(2),
-      stock: Math.floor(Math.random() * 1000),
-      category: ['电子产品', '服装', '食品', '家居'][i % 4]
-    }))
+// 获取请求头
+const getHeaders = () => {
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  
+  const token = authStore.token
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  return headers
+}
+
+// 加载可用的数据表（从模型API获取）
+const loadAvailableTables = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/models`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
+    
+    if (response.ok) {
+      const models = await response.json()
+      tables.value = models.map(model => ({
+        name: model.name,
+        label: model.label || model.name,
+        id: model.id
+      }))
+    }
+  } catch (error) {
+    console.error('加载数据表失败:', error)
+    ElMessage.error('加载数据表失败')
   }
 }
 
+// 加载表数据
 const loadTableData = async () => {
   if (!selectedTable.value) return
 
   loading.value = true
   try {
-    // 模拟 API 请求延迟
-    await new Promise(resolve => setTimeout(resolve, 800))
+    // 构建查询参数
+    const params = new URLSearchParams({
+      page: currentPage.value.toString(),
+      pageSize: pageSize.value.toString(),
+      sortBy: 'created_at',
+      sortOrder: 'desc'
+    })
+
+    const response = await fetch(`${API_BASE_URL}/api/data/${selectedTable.value}?${params}`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
     
-    const tableInfo = mockData[selectedTable.value]
-    if (tableInfo) {
-      columns.value = tableInfo.columns
-      tableData.value = tableInfo.data
-      total.value = tableInfo.data.length
+    if (!response.ok) {
+      throw new Error('加载数据失败')
+    }
+    
+    const result = await response.json()
+    
+    if (result.success) {
+      tableData.value = result.data || []
+      total.value = result.total || 0
+      
+      // 动态生成列
+      if (tableData.value.length > 0) {
+        const firstRow = tableData.value[0]
+        columns.value = Object.keys(firstRow).map(key => ({
+          prop: key,
+          label: formatColumnLabel(key),
+          width: getColumnWidth(key)
+        }))
+      } else {
+        columns.value = []
+      }
     } else {
-      columns.value = []
       tableData.value = []
+      columns.value = []
       total.value = 0
     }
   } catch (error) {
@@ -171,6 +198,38 @@ const loadTableData = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// 格式化列标签
+const formatColumnLabel = (key) => {
+  const labelMap = {
+    id: 'ID',
+    created_at: '创建时间',
+    updated_at: '更新时间',
+    name: '名称',
+    email: '邮箱',
+    username: '用户名',
+    role: '角色',
+    status: '状态'
+  }
+  
+  return labelMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+// 获取列宽度
+const getColumnWidth = (key) => {
+  const widthMap = {
+    id: 80,
+    created_at: 160,
+    updated_at: 160,
+    name: 150,
+    email: 180,
+    username: 120,
+    role: 100,
+    status: 100
+  }
+  
+  return widthMap[key] || 120
 }
 
 const refreshData = () => {
@@ -190,16 +249,139 @@ const exportData = () => {
   ElMessage.info('数据导出功能开发中')
 }
 
-const viewRecord = (record) => {
-  ElMessage.info(`查看记录: ${record.id}`)
+const viewRecord = async (record) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/data/${selectedTable.value}/${record.id}`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
+    
+    if (response.ok) {
+      const result = await response.json()
+      ElMessage.info(`查看记录: ${record.id} (数据已加载)`)
+      console.log('记录详情:', result.data)
+    } else {
+      ElMessage.info(`查看记录: ${record.id}`)
+    }
+  } catch (error) {
+    console.error('查看记录失败:', error)
+    ElMessage.info(`查看记录: ${record.id}`)
+  }
 }
 
-const editRecord = (record) => {
-  ElMessage.info(`编辑记录: ${record.id}`)
+const editRecord = async (record) => {
+  try {
+    // 获取记录详情
+    const response = await fetch(`${API_BASE_URL}/api/data/${selectedTable.value}/${record.id}`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
+    
+    if (!response.ok) {
+      ElMessage.info(`编辑记录: ${record.id}`)
+      return
+    }
+    
+    const result = await response.json()
+    
+    // 创建一个更简单的编辑对话框，只编辑主要字段
+    const recordData = result.data || record
+    
+    // 找出可以编辑的字段（排除id、created_at等系统字段）
+    const editableFields = Object.keys(recordData).filter(key => 
+      !['id', 'created_at', 'updated_at', 'password_hash'].includes(key)
+    )
+    
+    if (editableFields.length === 0) {
+      ElMessage.warning('没有可编辑的字段')
+      return
+    }
+    
+    // 创建编辑表单
+    let editForm = ''
+    editableFields.forEach(field => {
+      const value = recordData[field]
+      const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
+      editForm += `${field}: <input type="text" value="${displayValue}" id="edit-${field}" style="width:100%;margin-bottom:10px;"><br>`
+    })
+    
+    const resultDialog = await ElMessageBox.confirm(
+      `<div style="max-height:400px;overflow-y:auto;">
+        <h4>编辑记录 ${record.id}</h4>
+        ${editForm}
+      </div>`,
+      '编辑记录',
+      {
+        dangerouslyUseHTMLString: true,
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        showClose: false
+      }
+    )
+    
+    if (resultDialog) {
+      // 收集编辑后的数据
+      const updateData = {}
+      editableFields.forEach(field => {
+        const input = document.getElementById(`edit-${field}`)
+        if (input) {
+          const value = input.value.trim()
+          // 尝试解析JSON，如果不是JSON就保持原样
+          try {
+            updateData[field] = JSON.parse(value)
+          } catch {
+            updateData[field] = value
+          }
+        }
+      })
+      
+      // 更新记录
+      const updateResponse = await fetch(`${API_BASE_URL}/api/data/${selectedTable.value}/${record.id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(updateData)
+      })
+      
+      if (updateResponse.ok) {
+        ElMessage.success('记录已更新')
+        loadTableData() // 刷新列表
+      } else {
+        const errorData = await updateResponse.json()
+        throw new Error(errorData.error || '更新记录失败')
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('编辑记录失败:', error)
+      ElMessage.error(error.message || '编辑记录失败')
+    }
+  }
 }
 
-const deleteRecord = (record) => {
-  ElMessage.info(`删除记录: ${record.id}`)
+const deleteRecord = async (record) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除记录 "${record.id}" 吗？`, '删除确认', {
+      type: 'warning'
+    })
+    
+    const response = await fetch(`${API_BASE_URL}/api/data/${selectedTable.value}/${record.id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    })
+    
+    if (response.ok) {
+      ElMessage.success('记录已删除')
+      loadTableData() // 刷新列表
+    } else {
+      const errorData = await response.json()
+      throw new Error(errorData.error || '删除记录失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除记录失败:', error)
+      ElMessage.error(error.message || '删除记录失败')
+    }
+  }
 }
 
 const handleSizeChange = (size) => {
@@ -218,6 +400,11 @@ watch(selectedTable, (newTable) => {
     currentPage.value = 1
     loadTableData()
   }
+})
+
+// 初始化加载数据表
+onMounted(() => {
+  loadAvailableTables()
 })
 </script>
 

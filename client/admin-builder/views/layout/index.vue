@@ -288,9 +288,9 @@ watch(route, updateBreadcrumb, { immediate: true })
   overflow-y: auto;
 }
 
-.sidebar-menu:not(.el-menu--collapse) {
+/* .sidebar-menu:not(.el-menu--collapse) {
   width: 200px;
-}
+} */
 
 .sidebar-collapse {
   position: absolute;
