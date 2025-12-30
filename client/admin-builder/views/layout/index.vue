@@ -14,7 +14,7 @@
             <el-avatar :size="32" class="mr-2">
               <i class="i-carbon-user-avatar"></i>
             </el-avatar>
-            <span class="username">{{ username }}</span>
+            <span class="username text-white">{{ username }}</span>
             <i class="i-carbon-chevron-down ml-1"></i>
           </span>
           <template #dropdown>
@@ -182,7 +182,7 @@ const breadcrumb = ref([])
 const sidebarWidth = computed(() => isCollapse.value ? '64px' : '200px')
 const activeMenu = computed(() => route.path.split('/').pop() || 'dashboard')
 const userInfo = computed(() => authStore.user)
-const username = computed(() => userInfo.value?.username || '用户')
+const username = computed(() => userInfo.value?.name || '用户')
 
 // 方法
 const toggleSidebar = () => {
