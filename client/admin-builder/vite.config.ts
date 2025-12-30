@@ -12,10 +12,10 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 3001,
+    port: 3003,
     strictPort: true,
     cors: true,
-    origin: 'http://localhost:3001',
+    origin: 'http://localhost:3003',
   },
-  base: 'http://localhost:3001/',
+  base: 'http://localhost:3003/',
 })
