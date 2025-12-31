@@ -66,9 +66,9 @@
         <el-form-item prop="agreement">
           <el-checkbox v-model="registerForm.agreement">
             我已阅读并同意
-            <el-link type="primary" :underline="false" @click="showAgreement">《用户协议》</el-link>
+            <el-button link type="primary" @click="showAgreement">《用户协议》</el-button>
             和
-            <el-link type="primary" :underline="false" @click="showPrivacy">《隐私政策》</el-link>
+            <el-button link type="primary" @click="showPrivacy">《隐私政策》</el-button link>
           </el-checkbox>
         </el-form-item>
 
@@ -86,7 +86,7 @@
 
         <div class="text-center text-gray-500 text-sm mt-6">
           已有账号？
-          <el-link type="primary" :underline="false" @click="gotoLogin">立即登录</el-link>
+          <el-button link type="primary" @click="gotoLogin">立即登录</el-button>
         </div>
       </el-form>
 

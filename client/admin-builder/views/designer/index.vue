@@ -54,8 +54,8 @@
         </el-form-item>
         <el-form-item label="设备视图">
           <el-radio-group v-model="deviceType" size="small" class="w-full">
-            <el-radio-button label="pc">桌面端</el-radio-button>
-            <el-radio-button label="mobile">移动端</el-radio-button>
+            <el-radio-button value="pc">桌面端</el-radio-button>
+            <el-radio-button value="mobile">移动端</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item>

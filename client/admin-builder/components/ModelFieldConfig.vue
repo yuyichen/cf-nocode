@@ -57,9 +57,9 @@
         </el-form-item>
         <el-form-item label="Relation Type">
           <el-radio-group v-model="field.relation_type">
-            <el-radio label="hasOne">Has One</el-radio>
-            <el-radio label="hasMany">Has Many</el-radio>
-            <el-radio label="belongsTo">Belongs To</el-radio>
+            <el-radio value="hasOne">Has One</el-radio>
+            <el-radio value="hasMany">Has Many</el-radio>
+            <el-radio value="belongsTo">Belongs To</el-radio>
           </el-radio-group>
         </el-form-item>
       </div>

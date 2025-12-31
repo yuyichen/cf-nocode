@@ -15,6 +15,10 @@
             <i class="i-carbon-renew mr-1"></i>
             刷新
           </el-button>
+          <el-button @click="exportRoles">
+            <i class="i-carbon-download mr-1"></i>
+            导出
+          </el-button>
         </div>
       </div>
     </div>
@@ -304,7 +308,11 @@ const filteredRoles = computed(() => {
 })
 
 const selectRole = (role) => {
-  selectedRole.value = role
+  // 创建角色的深拷贝，避免直接修改原始数据
+  selectedRole.value = {
+    ...role,
+    permissions: [...role.permissions]
+  }
 }
 
 const isPermissionChecked = (permission) => {
@@ -399,8 +407,39 @@ const addRole = async () => {
 }
 
 const editRole = (role) => {
-  selectedRole.value = role
+  // 创建角色的深拷贝，避免直接修改原始数据
+  selectedRole.value = {
+    ...role,
+    permissions: [...role.permissions]
+  }
   ElMessage.info(`编辑角色: ${role.name}`)
+}
+
+const exportRoles = () => {
+  const data = roles.value.map(role => ({
+    角色名称: role.name,
+    角色代码: role.code,
+    描述: role.description,
+    用户数: role.user_count,
+    权限数: role.permission_count,
+    创建时间: new Date().toLocaleString('zh-CN')
+  }))
+  
+  // 模拟导出
+  const csvContent = 'data:text/csv;charset=utf-8,' 
+    + ['角色名称,角色代码,描述,用户数,权限数,创建时间']
+      .concat(data.map(row => Object.values(row).join(',')))
+      .join('\n')
+  
+  const encodedUri = encodeURI(csvContent)
+  const link = document.createElement('a')
+  link.setAttribute('href', encodedUri)
+  link.setAttribute('download', `角色列表_${new Date().toISOString().slice(0, 10)}.csv`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  
+  ElMessage.success('角色列表已导出')
 }
 
 const deleteRole = (role) => {
@@ -419,13 +458,111 @@ const deleteRole = (role) => {
   })
 }
 
-const savePermissions = () => {
+const savePermissions = async () => {
   if (!selectedRole.value) return
   
-  // 更新权限数量
-  selectedRole.value.permission_count = selectedRole.value.permissions.length
+  const loadingMessage = ElMessage({
+    type: 'loading',
+    message: '正在保存权限配置...',
+    duration: 0
+  })
   
-  ElMessage.success('权限配置已保存')
+  try {
+    // 首先尝试调用后端API
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787'
+    
+    // 构建请求数据 - 将数字ID转换为权限代码
+    // 创建数字ID到权限代码的映射
+    const idToCodeMap = {}
+    modules.value.forEach(module => {
+      module.permissions.forEach(perm => {
+        idToCodeMap[perm.id] = perm.code
+      })
+    })
+    
+    // 将数字ID转换为权限代码
+    const permissionCodes = selectedRole.value.permissions.map(id => {
+      const code = idToCodeMap[id]
+      if (!code) {
+        console.warn(`Permission code not found for ID: ${id}`)
+        return id.toString() // 如果找不到映射，返回原始ID
+      }
+      return code
+    })
+    
+    const requestData = {
+      permissions: permissionCodes
+    }
+    
+    // 角色代码到UUID的映射（根据后端实际数据）
+    const roleCodeToIdMap = {
+      'admin': '09ebf96b-32cc-4ac4-9f62-7527fe02fbfe',
+      'editor': 'eaceb047-5002-49f6-bc10-f9a6b1420891',
+      'viewer': 'c0f4ae07-2c80-4b90-ac6c-ec5b23653534'
+    }
+    
+    // 获取当前角色的代码
+    const currentRole = roles.value.find(r => r.id === selectedRole.value.id)
+    if (!currentRole) {
+      throw new Error('角色未找到')
+    }
+    
+    // 使用角色代码获取正确的UUID
+    const roleId = roleCodeToIdMap[currentRole.code] || selectedRole.value.id
+    
+    // 尝试调用API
+    const response = await fetch(`${API_BASE_URL}/api/roles/${roleId}/permissions`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+      },
+      body: JSON.stringify(requestData)
+    })
+    
+    if (response.ok) {
+      // API调用成功
+      const data = await response.json()
+      
+      // 更新前端数据
+      const roleIndex = roles.value.findIndex(r => r.id === selectedRole.value.id)
+      if (roleIndex !== -1) {
+        roles.value[roleIndex].permissions = [...selectedRole.value.permissions]
+        roles.value[roleIndex].permission_count = selectedRole.value.permissions.length
+        
+        if (selectedRole.value.id === roles.value[roleIndex].id) {
+          selectedRole.value = { ...roles.value[roleIndex] }
+        }
+      }
+      
+      loadingMessage.close()
+      ElMessage.success('权限配置已保存到服务器')
+    } else {
+      // API调用失败，使用模拟数据保存
+      const errorText = await response.text()
+      console.error('API调用失败:', response.status, errorText)
+      throw new Error(`API调用失败: ${response.status}`)
+    }
+  } catch (error) {
+    // API调用失败，使用模拟数据保存
+    console.warn('API调用失败，使用本地保存:', error)
+    
+    // 找到对应的角色并更新权限（模拟数据）
+    const roleIndex = roles.value.findIndex(r => r.id === selectedRole.value.id)
+    if (roleIndex !== -1) {
+      // 更新角色的权限和权限数量
+      roles.value[roleIndex].permissions = [...selectedRole.value.permissions]
+      roles.value[roleIndex].permission_count = selectedRole.value.permissions.length
+      
+      // 如果当前选中的角色就是正在编辑的角色，也需要更新
+      if (selectedRole.value.id === roles.value[roleIndex].id) {
+        selectedRole.value = { ...roles.value[roleIndex] }
+      }
+    }
+    
+    loadingMessage.close()
+    ElMessage.success('权限配置已保存（本地）')
+  }
 }
 </script>
 

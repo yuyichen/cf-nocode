@@ -7,9 +7,9 @@ export default defineConfig({
   plugins: [
     vue(),
     UnoCSS(),
-    qiankun('admin-builder', {
-      useDevMode: true
-    })
+    // qiankun('admin-builder', {
+    //   useDevMode: true
+    // })
   ],
   server: {
     port: 3003,

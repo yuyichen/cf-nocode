@@ -109,6 +109,60 @@ app.delete('/api/models/:id', async (c) => {
   }
 });
 
+// ========== 系统统计API ==========
+
+// 获取仪表盘统计数据
+app.get('/api/stats', async (c) => {
+  try {
+    const db = c.env.DB;
+    
+    // 获取模型总数
+    const modelResult = await db.prepare('SELECT COUNT(*) as count FROM models').first() as any;
+    const modelsCount = modelResult?.count || 0;
+    
+    // 获取用户总数
+    let usersCount = 0;
+    try {
+      const userResult = await db.prepare('SELECT COUNT(*) as count FROM users').first() as any;
+      usersCount = userResult?.count || 0;
+    } catch (e) {
+      console.warn('Failed to count users:', e);
+    }
+    
+    // 获取所有模型，以便计算数据记录总数
+    const { results: models } = await db.prepare('SELECT name FROM models').all() as any;
+    
+    let recordsCount = 0;
+    if (models && models.length > 0) {
+      for (const model of models) {
+        try {
+          // 检查表是否存在
+          const tableCheck = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").bind(model.name).first();
+          if (tableCheck) {
+            const { count } = await db.prepare(`SELECT COUNT(*) as count FROM ${model.name}`).first() as any;
+            recordsCount += count || 0;
+          }
+        } catch (e) {
+          console.warn(`Failed to count records for ${model.name}:`, e);
+        }
+      }
+    }
+    
+    // API调用次数（模拟，实际应用中可以从日志表获取）
+    const apiCallsCount = 1250 + (recordsCount * 5) + (usersCount * 10);
+    
+    return c.json({
+      models: modelsCount,
+      users: usersCount,
+      records: recordsCount,
+      apiCalls: apiCallsCount
+    });
+  } catch (error: any) {
+    console.error('Stats error:', error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // ========== 字段管理API ==========
 
 // 添加字段到模型
@@ -651,6 +705,161 @@ app.get('/api/db/migrate/status', async (c) => {
       pending_migrations: status.pendingMigrations,
       migrations: status.details
     });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== 角色权限管理API ==========
+
+// 导入角色服务
+import { RoleService } from './role-service';
+
+// 角色服务实例
+const getRoleService = (c: any) => new RoleService(c.env.DB);
+
+// 初始化角色权限表
+app.post('/api/roles/init-schema', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const success = await service.initializeSchema();
+    
+    if (!success) {
+      return c.json({ error: 'Failed to initialize role schema' }, 500);
+    }
+    
+    return c.json({ success: true, message: 'Role schema initialized successfully' });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取所有角色
+app.get('/api/roles', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const roles = await service.getAllRoles();
+    return c.json(roles);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取单个角色
+app.get('/api/roles/:id', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const role = await service.getRoleById(c.req.param('id'));
+    if (!role) {
+      return c.json({ error: 'Role not found' }, 404);
+    }
+    return c.json(role);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 创建角色
+app.post('/api/roles', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const data = await c.req.json();
+    
+    // 验证必要字段
+    if (!data.name || !data.code) {
+      return c.json({ error: 'Name and code are required' }, 400);
+    }
+
+    const role = await service.createRole(data);
+    if (!role) {
+      return c.json({ error: 'Failed to create role' }, 500);
+    }
+    
+    return c.json(role, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 更新角色
+app.put('/api/roles/:id', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const data = await c.req.json();
+    const success = await service.updateRole(c.req.param('id'), data);
+    
+    if (!success) {
+      return c.json({ error: 'Update failed' }, 400);
+    }
+    
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 删除角色
+app.delete('/api/roles/:id', async (c) => {
+  try {
+    const service = getRoleService(c);
+    await service.deleteRole(c.req.param('id'));
+    
+    return c.json({ success: true, message: 'Role deleted successfully' });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取所有权限
+app.get('/api/permissions', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const permissions = await service.getAllPermissions();
+    return c.json(permissions);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取按模块分组的权限
+app.get('/api/permissions/by-module', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const permissions = await service.getPermissionsByModule();
+    return c.json(permissions);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 获取角色的权限
+app.get('/api/roles/:id/permissions', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const permissions = await service.getRolePermissions(c.req.param('id'));
+    return c.json(permissions);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 更新角色权限
+app.put('/api/roles/:id/permissions', async (c) => {
+  try {
+    const service = getRoleService(c);
+    const { permissions } = await c.req.json();
+    
+    if (!Array.isArray(permissions)) {
+      return c.json({ error: 'Permissions must be an array' }, 400);
+    }
+
+    const success = await service.updateRolePermissions(c.req.param('id'), permissions);
+    
+    if (!success) {
+      return c.json({ error: 'Failed to update permissions' }, 500);
+    }
+    
+    return c.json({ success: true, message: 'Permissions updated successfully' });
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }

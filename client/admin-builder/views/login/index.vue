@@ -37,7 +37,7 @@
         <el-form-item>
           <div class="flex justify-between items-center w-full">
             <el-checkbox v-model="loginForm.remember">记住我</el-checkbox>
-            <el-link type="primary" :underline="false">忘记密码？</el-link>
+            <el-button link type="primary">忘记密码？</el-button>
           </div>
         </el-form-item>
 
@@ -55,7 +55,7 @@
 
         <div class="text-center text-gray-500 text-sm mt-6">
           还没有账号？
-          <el-link type="primary" :underline="false" @click="gotoRegister">立即注册</el-link>
+          <el-button link type="primary" @click="gotoRegister">立即注册</el-button>
         </div>
       </el-form>
 

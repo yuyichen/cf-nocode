@@ -26,18 +26,18 @@
       <div class="error-help">
         <p class="help-title">需要帮助？</p>
         <div class="help-links">
-          <el-link type="primary" :underline="false" @click="contactSupport">
+          <el-button link type="primary" :underline="false" @click="contactSupport">
             <i class="i-carbon-chat mr-1"></i>
             联系技术支持
-          </el-link>
-          <el-link type="primary" :underline="false" @click="viewDocumentation">
+          </el-button>
+          <el-button link type="primary" :underline="false" @click="viewDocumentation">
             <i class="i-carbon-document mr-1"></i>
             查看文档
-          </el-link>
-          <el-link type="primary" :underline="false" @click="reportIssue">
+          </el-button>
+          <el-button link type="primary" :underline="false" @click="reportIssue">
             <i class="i-carbon-report mr-1"></i>
             报告问题
-          </el-link>
+          </el-button>
         </div>
       </div>
     </div>
