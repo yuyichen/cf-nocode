@@ -31,6 +31,18 @@ app.get('/', (c) => c.text('Cloudflare No-Code API Engine Ready'));
 const getModelService = (c: any) => new ModelService(c.env.DB);
 const getCrudService = (c: any) => new CrudService(c.env.DB);
 
+async function notifyRealtimeChange(c: any, tableName: string, action: string, recordId?: string, data?: any) {
+  try {
+    if (c.env.REALTIME_ROOM) {
+      const id = c.env.REALTIME_ROOM.idFromName('global-room');
+      const realtimeRoom = c.env.REALTIME_ROOM.get(id);
+      await realtimeRoom.notifyDataChange(tableName, action, recordId, data);
+    }
+  } catch (error) {
+    console.error('Failed to notify realtime change:', error);
+  }
+}
+
 // ========== 模型管理API ==========
 
 // 获取所有模型
@@ -313,10 +325,23 @@ app.post('/api/data/:tableName', async (c) => {
     const tableName = c.req.param('tableName');
     const data = await c.req.json();
     
+    // 数据验证（如果有验证规则）
+    const validationRules = await getValidationRules(tableName);
+    const validationResult = await service.validateData(tableName, data, validationRules);
+    if (!validationResult.success) {
+      return c.json({ 
+        success: false, 
+        error: 'Validation failed',
+        errors: validationResult.errors 
+      }, 400);
+    }
+    
     const result = await service.create(tableName, data);
     if (!result.success) {
       return c.json({ error: result.error }, 400);
     }
+
+    await notifyRealtimeChange(c, tableName, 'create', result.id, data);
     
     return c.json({ 
       success: true, 
@@ -340,6 +365,8 @@ app.put('/api/data/:tableName/:id', async (c) => {
     if (!result.success) {
       return c.json({ error: result.error }, 400);
     }
+
+    await notifyRealtimeChange(c, tableName, 'update', id, data);
     
     return c.json({ success: true, message: 'Data updated successfully' });
   } catch (error: any) {
@@ -358,6 +385,8 @@ app.delete('/api/data/:tableName/:id', async (c) => {
     if (!result.success) {
       return c.json({ error: result.error }, 400);
     }
+
+    await notifyRealtimeChange(c, tableName, 'delete', id);
     
     return c.json({ success: true, message: 'Data deleted successfully' });
   } catch (error: any) {
@@ -380,8 +409,146 @@ app.post('/api/data/:tableName/batch-delete', async (c) => {
     if (!result.success) {
       return c.json({ error: result.error }, 400);
     }
+
+    await notifyRealtimeChange(c, tableName, 'batch_delete', undefined, { ids });
     
     return c.json({ success: true, message: 'Batch delete completed' });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.post('/api/data/:tableName/query', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const query = await c.req.json();
+    
+    const {
+      selects = [],
+      where = '',
+      orderBy = 'created_at',
+      orderDirection = 'DESC',
+      joins = [],
+      groupBy = [],
+      having = '',
+      limit,
+      offset
+    } = query;
+
+    const builder = {
+      selects,
+      where,
+      orderBy: `${orderBy} ${orderDirection}`,
+      joins,
+      groupBy,
+      having,
+      limit,
+      offset
+    };
+
+    const result = await service.advancedQuery(tableName, builder);
+    
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json(result);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 搜索 API
+app.get('/api/data/:tableName/search', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const {
+      q = '',
+      fields = [],
+      page = 1,
+      pageSize = 20,
+      sortBy = 'created_at',
+      sortOrder = 'desc'
+    } = c.req.query();
+
+    const result = await service.searchTable(tableName, q, fields, {
+      page: parseInt(page),
+      pageSize: parseInt(pageSize),
+      sortBy,
+      sortOrder: sortOrder as 'asc' | 'desc'
+    });
+    
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json(result);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 聚合数据 API
+app.post('/api/data/:tableName/aggregate', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const { aggregation, where, having } = await c.req.json();
+    
+    if (!aggregation || !aggregation.type || !aggregation.field) {
+      return c.json({ error: 'Aggregation type and field are required' }, 400);
+    }
+    
+    const result = await service.aggregateData(tableName, aggregation, { where, having });
+    
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+    
+    return c.json(result);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// 数据导出 API
+app.get('/api/data/:tableName/export', async (c) => {
+  try {
+    const service = getCrudService(c);
+    const tableName = c.req.param('tableName');
+    const {
+      format = 'json',
+      fields,
+      where,
+      orderBy,
+      limit = 10000
+    } = c.req.query();
+
+    const result = await service.exportData(tableName, {
+      format: format as 'json' | 'csv' | 'xlsx',
+      fields: fields ? fields.split(',') : undefined,
+      where,
+      orderBy,
+      limit: parseInt(limit)
+    });
+    
+    if (!result.success) {
+      return c.json({ error: result.error }, 400);
+    }
+
+    if (format === 'json') {
+      c.header('Content-Type', 'application/json');
+      c.header('Content-Disposition', `attachment; filename="${tableName}_export.json"`);
+      return c.body(result.data);
+    } else if (format === 'csv') {
+      c.header('Content-Type', 'text/csv');
+      c.header('Content-Disposition', `attachment; filename="${tableName}_export.csv"`);
+      return c.body(result.data);
+    }
+    
+    return c.json({ error: 'Unsupported format' }, 400);
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }
