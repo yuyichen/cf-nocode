@@ -6,13 +6,28 @@
 
 平台提供以下类型的 API：
 
-1. **模型管理 API** - 管理数据模型和字段
-2. **数据 CRUD API** - 对动态表数据进行操作
-3. **认证 API** - 用户认证和授权
-4. **GraphQL API** - 灵活的 GraphQL 查询
-5. **迁移 API** - 数据库迁移管理
+1. **模型管理 API** - 管理数据模型和字段定义
+2. **数据 CRUD API** - 动态表数据的完整操作，支持高级查询
+3. **认证 API** - JWT 用户认证、授权和会话管理
+4. **角色权限 API** - 基于角色的访问控制 (RBAC) 系统
+5. **GraphQL API** - 灵活的 GraphQL 查询和变更
+6. **文件存储 API** - Cloudflare R2 文件上传、下载和管理
+7. **工作流 API** - 业务流程自动化和触发器管理
+8. **实时通信 API** - WebSocket 连接和实时消息推送
+9. **迁移 API** - 数据库版本管理和迁移系统
+10. **系统 API** - 健康检查、统计信息和系统状态
 
-所有 API 都遵循 RESTful 设计原则，使用 JSON 格式进行数据交换。
+### 🏗️ 微服务架构
+
+平台采用微服务架构，每个服务独立部署：
+
+- **API Worker** (`:8787`) - 主要业务逻辑和数据处理
+- **Auth Worker** (`:8788`) - 专用认证服务（可选部署）
+- **Storage Service** - 文件存储和管理
+- **Workflow Service** - 工作流自动化
+- **Realtime Worker** - WebSocket 实时通信
+
+所有 API 都遵循 RESTful 设计原则，使用 JSON 格式进行数据交换，支持 CORS 跨域访问。
 
 ## 🔧 模型管理 API
 
@@ -486,6 +501,393 @@ mutation {
 }
 ```
 
+## 🎭 角色权限管理 API
+
+### 初始化 RBAC 系统
+```
+POST /api/roles/init-schema
+```
+
+**描述**: 初始化角色权限系统，创建默认角色和权限
+
+**响应示例**:
+```json
+{
+  "success": true,
+  "message": "RBAC system initialized successfully",
+  "createdRoles": ["admin", "editor", "viewer"],
+  "createdPermissions": 25
+}
+```
+
+### 获取所有角色
+```
+GET /api/roles
+```
+
+**响应示例**:
+```json
+[
+  {
+    "id": "role-001",
+    "name": "管理员",
+    "code": "admin",
+    "description": "系统管理员，拥有所有权限",
+    "user_count": 2,
+    "permission_count": 25,
+    "created_at": "2025-12-23T10:00:00.000Z"
+  }
+]
+```
+
+### 创建角色
+```
+POST /api/roles
+```
+
+**请求体**:
+```json
+{
+  "name": "内容编辑",
+  "code": "content_editor",
+  "description": "负责内容创建和编辑"
+}
+```
+
+### 获取权限列表
+```
+GET /api/permissions
+```
+
+**响应示例**:
+```json
+[
+  {
+    "id": "perm-001",
+    "module": "models",
+    "action": "create",
+    "description": "创建数据模型",
+    "code": "models:create"
+  }
+]
+```
+
+### 按模块获取权限
+```
+GET /api/permissions/by-module
+```
+
+**响应示例**:
+```json
+{
+  "models": [
+    { "code": "models:create", "description": "创建模型" },
+    { "code": "models:read", "description": "查看模型" },
+    { "code": "models:update", "description": "更新模型" },
+    { "code": "models:delete", "description": "删除模型" }
+  ],
+  "records": [
+    { "code": "records:create", "description": "创建记录" },
+    { "code": "records:read", "description": "查看记录" }
+  ]
+}
+```
+
+### 分配角色权限
+```
+PUT /api/roles/:roleId/permissions
+```
+
+**请求体**:
+```json
+{
+  "permissionIds": ["perm-001", "perm-002", "perm-003"]
+}
+```
+
+## 📁 文件存储 API
+
+### 上传文件
+```
+POST /upload
+```
+
+**Content-Type**: `multipart/form-data`
+
+**请求参数**:
+- `file` (文件): 要上传的文件
+- `folder` (可选): 文件夹路径
+- `public` (可选): 是否公开访问，默认 false
+
+**响应示例**:
+```json
+{
+  "success": true,
+  "file": {
+    "id": "file-123",
+    "name": "document.pdf",
+    "size": 1024000,
+    "type": "application/pdf",
+    "url": "https://storage.example.com/files/file-123",
+    "created_at": "2025-12-23T10:00:00.000Z"
+  }
+}
+```
+
+### 获取文件列表
+```
+GET /files
+```
+
+**查询参数**:
+- `page` (可选): 页码，默认 1
+- `pageSize` (可选): 每页数量，默认 20
+- `folder` (可选): 文件夹筛选
+- `type` (可选): 文件类型筛选
+
+**响应示例**:
+```json
+{
+  "files": [
+    {
+      "id": "file-123",
+      "name": "document.pdf",
+      "size": 1024000,
+      "type": "application/pdf",
+      "folder": "/documents",
+      "public": true,
+      "created_at": "2025-12-23T10:00:00.000Z"
+    }
+  ],
+  "total": 100,
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+### 下载文件
+```
+GET /file/:id
+```
+
+**参数**:
+- `id` (路径参数): 文件 ID
+
+**响应**: 文件二进制数据，包含适当的 Content-Type 头
+
+### 获取文件访问 URL
+```
+GET /url/:id
+```
+
+**响应示例**:
+```json
+{
+  "url": "https://storage.example.com/files/file-123?expires=2025-12-24T10:00:00.000Z&signature=abc123",
+  "expiresAt": "2025-12-24T10:00:00.000Z"
+}
+```
+
+### 删除文件
+```
+DELETE /file/:id
+```
+
+**响应示例**:
+```json
+{
+  "success": true,
+  "message": "File deleted successfully"
+}
+```
+
+### 获取存储统计
+```
+GET /stats
+```
+
+**响应示例**:
+```json
+{
+  "totalFiles": 1500,
+  "totalSize": 5368709120,
+  "usedQuota": 2147483648,
+  "availableQuota": 3221225472,
+  "filesByType": {
+    "image": 800,
+    "document": 500,
+    "video": 200
+  }
+}
+```
+
+## ⚙️ 工作流 API
+
+### 获取工作流列表
+```
+GET /workflows
+```
+
+**响应示例**:
+```json
+[
+  {
+    "id": "workflow-001",
+    "name": "用户注册欢迎流程",
+    "description": "新用户注册时发送欢迎邮件",
+    "enabled": true,
+    "trigger": {
+      "type": "data_change",
+      "table": "users",
+      "event": "create"
+    },
+    "created_at": "2025-12-23T10:00:00.000Z",
+    "last_executed": "2025-12-23T15:30:00.000Z"
+  }
+]
+```
+
+### 创建工作流
+```
+POST /workflows
+```
+
+**请求体**:
+```json
+{
+  "name": "订单处理流程",
+  "description": "处理新订单的自动化流程",
+  "trigger": {
+    "type": "data_change",
+    "table": "orders",
+    "event": "create",
+    "conditions": {
+      "status": "pending"
+    }
+  },
+  "actions": [
+    {
+      "type": "send_email",
+      "config": {
+        "to": "{{customer.email}}",
+        "subject": "订单确认",
+        "template": "order_confirmation"
+      }
+    },
+    {
+      "type": "update_data",
+      "config": {
+        "table": "orders",
+        "id": "{{record.id}}",
+        "data": {
+          "status": "processing"
+        }
+      }
+    }
+  ]
+}
+```
+
+### 手动触发工作流
+```
+POST /workflows/trigger
+```
+
+**请求体**:
+```json
+{
+  "workflowId": "workflow-001",
+  "data": {
+    "userId": "user-123",
+    "action": "manual_trigger"
+  }
+}
+```
+
+### 获取执行历史
+```
+GET /executions
+```
+
+**查询参数**:
+- `workflowId` (可选): 工作流 ID 筛选
+- `status` (可选): 执行状态筛选 (success/failure/running)
+- `page` (可选): 页码
+- `pageSize` (可选): 每页数量
+
+## 🔄 实时通信 API
+
+### WebSocket 连接
+```
+GET /ws
+```
+
+**协议**: WebSocket
+**URL**: `ws://localhost:8787/ws`
+
+#### 连接认证
+```javascript
+const ws = new WebSocket('ws://localhost:8787/ws?token=YOUR_JWT_TOKEN');
+```
+
+#### 消息格式
+```json
+{
+  "type": "subscribe",
+  "channel": "table:users",
+  "data": {}
+}
+```
+
+#### 数据变更通知
+```json
+{
+  "type": "data_change",
+  "channel": "table:users",
+  "data": {
+    "action": "create",
+    "table": "users",
+    "record": {
+      "id": "user-123",
+      "name": "新用户",
+      "created_at": "2025-12-23T10:00:00.000Z"
+    }
+  }
+}
+```
+
+### 获取实时状态
+```
+GET /status
+```
+
+**响应示例**:
+```json
+{
+  "connected_clients": 150,
+  "active_rooms": 25,
+  "messages_per_second": 45,
+  "uptime": 86400
+}
+```
+
+### 广播消息
+```
+POST /broadcast
+```
+
+**请求体**:
+```json
+{
+  "channel": "global",
+  "message": {
+    "type": "notification",
+    "title": "系统维护通知",
+    "content": "系统将在10分钟后进行维护"
+  }
+}
+```
+
 ## 🗄️ 数据库迁移 API
 
 ### 获取迁移状态
@@ -522,6 +924,46 @@ POST /api/migrations/init
 ### 应用所有待处理迁移
 ```
 POST /api/migrations/up
+```
+
+## 📊 系统 API
+
+### 健康检查
+```
+GET /
+```
+
+**响应**: `Cloudflare No-Code API Engine Ready`
+
+### 获取系统统计
+```
+GET /api/stats
+```
+
+**响应示例**:
+```json
+{
+  "models": {
+    "total": 25,
+    "created_this_month": 5
+  },
+  "records": {
+    "total": 15420,
+    "created_today": 127
+  },
+  "users": {
+    "total": 850,
+    "active_today": 120
+  },
+  "storage": {
+    "total_files": 3200,
+    "total_size": "5.2GB"
+  },
+  "workflows": {
+    "total": 15,
+    "executed_today": 1450
+  }
+}
 ```
 
 ## 🧪 测试命令
